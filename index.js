@@ -4,7 +4,7 @@ require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const { google } = require("googleapis");
 
-// Inisialisasi bot Telegram
+// Inisialisasi bot Telegram (polling mode)
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
 // Konfigurasi autentikasi Google API
@@ -13,13 +13,16 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+// Ambil spreadsheetId dari env
+const spreadsheetId = process.env.SPREADSHEET_ID;
+
 // Fungsi untuk mengambil data dari baris tertentu
 async function getRowData(rowNumber) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: client });
 
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.SPREADSHEET_ID,
+    spreadsheetId,
     range: "Sheet1",
   });
 
@@ -40,70 +43,139 @@ async function getRowData(rowNumber) {
   return message;
 }
 
-// Handler untuk perintah "/row"
+// Fungsi tambah data (NIK, NAMA, NO_TELP, ALAMAT)
+async function addRowData(row) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: "Sheet1!A:D",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [row],
+    },
+  });
+}
+
+// Fungsi mencari data berdasarkan kata kunci Nama atau Alamat
+async function searchByKeyword(keyword) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: "Sheet1",
+  });
+
+  const rows = res.data.values;
+
+  if (!rows || rows.length === 0) {
+    return "Spreadsheet kosong.";
+  }
+
+  const headers = rows[0];
+  const results = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const nama = (row[1] || "").toLowerCase();
+    const alamat = (row[3] || "").toLowerCase();
+    const key = keyword.toLowerCase();
+
+    if (nama.includes(key) || alamat.includes(key)) {
+      let message = `📄 *Data Baris ${i + 1}*:\n`;
+      headers.forEach((head, idx) => {
+        message += `*${head}*: ${row[idx] || "-"}\n`;
+      });
+      results.push(message);
+    }
+  }
+
+  if (results.length === 0) {
+    return `❌ Tidak ditemukan data dengan kata kunci "${keyword}".`;
+  }
+
+  // Maksimal 5 hasil
+  return results.slice(0, 5).join("\n\n");
+}
+
+// Handler /start
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    "👋 Halo! Gunakan perintah:\n" +
+      "`/row <nomor>` untuk melihat data baris tertentu.\n" +
+      "`/isi NIK NAMA NO_TELP ALAMAT` untuk menambah data.\n" +
+      "`/cari <kata_kunci>` untuk mencari data berdasarkan Nama atau Alamat.\n\n" +
+      "Contoh:\n/row 2\n/isi 123456 Yus 08123456789 Jakarta\n/cari Jakarta",
+    { parse_mode: "Markdown" }
+  );
+});
+
+// Handler /row <nomor>
 bot.onText(/\/row (\d+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const rowNumber = parseInt(match[1]);
 
-  bot.sendMessage(chatId, "🔄 sik yo, lagi mundut data...", { parse_mode: "Markdown" });
+  bot.sendMessage(chatId, "🔄 Mengambil data...", { parse_mode: "Markdown" });
 
   try {
     const response = await getRowData(rowNumber);
     bot.sendMessage(chatId, response, { parse_mode: "Markdown" });
   } catch (error) {
     console.error(error);
-    bot.sendMessage(chatId, "❌ Gagal, mundut data.");
+    bot.sendMessage(chatId, "❌ Gagal mengambil data.");
   }
 });
 
-// Handler untuk /start
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-    "👋 Halo mas Yus! Gunakan perintah:\n`/row <nomor>` untuk melihat data dari spreadsheet.\nContoh: `/row 2`\nAtau: `/isi <NIK> <NAMA> <NO_TELP> <ALAMAT>` untuk menambah data.",
-    { parse_mode: "Markdown" }
-  );
-});
-
-// Handler untuk perintah /isi
-bot.onText(/^\/isi (.+)/, async (msg, match) => {
+// Handler /isi NIK NAMA NO_TELP ALAMAT
+bot.onText(/\/isi (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const input = match[1].trim();
-  const args = input.split(/\s+/);
+  const text = match[1].trim();
 
-  if (args.length < 4) {
-    return bot.sendMessage(chatId, "❗ Format salah. Gunakan: /isi NIK NAMA NO_TELP ALAMAT");
+  // Pisahkan argumen dengan spasi
+  // NIK harus angka, NO_TELP minimal 8 digit, NAMA & ALAMAT bisa spasi, ambil asumsi urutan
+  const parts = text.split(/\s+/);
+
+  if (parts.length < 4) {
+    return bot.sendMessage(chatId, "Format salah. Gunakan:\n/isi NIK NAMA NO_TELP ALAMAT");
   }
 
-  const [nik, nama, noTelp, ...alamatParts] = args;
-  const alamat = alamatParts.join(" ");
+  const nik = parts[0];
+  const noTelp = parts[parts.length - 2];
+  const alamat = parts.slice(parts.length - 1).join(" "); // ambil alamat dari kata terakhir (simple)
+  const nama = parts.slice(1, parts.length - 2).join(" ");
 
+  // Validasi NIK dan noTelp
   if (!/^\d+$/.test(nik)) {
-    return bot.sendMessage(chatId, "❗ NIK harus berupa angka.");
+    return bot.sendMessage(chatId, "NIK harus berupa angka.");
   }
-
-  if (!/^08\d{8,11}$/.test(noTelp)) {
-    return bot.sendMessage(chatId, "❗ Nomor telepon tidak valid. Harus dimulai dengan 08 dan 10-13 digit.");
+  if (!/^08\d{6,12}$/.test(noTelp)) {
+    return bot.sendMessage(chatId, "Nomor telepon tidak valid. Contoh: 08123456789");
   }
 
   try {
-    const client = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: client });
-
-    const row = [nik, nama, noTelp, alamat];
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.SPREADSHEET_ID,
-      range: "Sheet1!A:D",
-      valueInputOption: "RAW",
-      requestBody: {
-        values: [row],
-      },
-    });
-
+    await addRowData([nik, nama, noTelp, alamat]);
     bot.sendMessage(chatId, "✅ Data berhasil ditambahkan ke spreadsheet!");
   } catch (error) {
     console.error(error);
     bot.sendMessage(chatId, "❌ Gagal menambahkan data.");
+  }
+});
+
+// Handler /cari <kata_kunci>
+bot.onText(/\/cari (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const keyword = match[1];
+
+  bot.sendMessage(chatId, "🔄 Mencari data...", { parse_mode: "Markdown" });
+
+  try {
+    const response = await searchByKeyword(keyword);
+    bot.sendMessage(chatId, response, { parse_mode: "Markdown" });
+  } catch (error) {
+    console.error(error);
+    bot.sendMessage(chatId, "❌ Gagal mencari data.");
   }
 });
