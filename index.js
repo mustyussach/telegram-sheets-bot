@@ -1,11 +1,18 @@
 console.log("Bot sedang berjalan...");
 
 require("dotenv").config();
+const fs = require("fs");
 const TelegramBot = require("node-telegram-bot-api");
 const { google } = require("googleapis");
 
 // Inisialisasi bot Telegram (polling mode)
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+
+// 🔽 Tambahkan bagian ini SEBELUM menggunakan GoogleAuth
+// Decode isi GOOGLE_CREDENTIALS_BASE64 dari .env dan tulis ke credentials.json
+if (!fs.existsSync("credentials.json")) {
+  fs.writeFileSync("credentials.json", Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64"));
+}
 
 // Konfigurasi autentikasi Google API
 const auth = new google.auth.GoogleAuth({
