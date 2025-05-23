@@ -11,7 +11,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 // 🔽 Tambahkan bagian ini SEBELUM menggunakan GoogleAuth
 // Decode isi GOOGLE_CREDENTIALS_BASE64 dari .env dan tulis ke credentials.json
 if (!fs.existsSync("credentials.json")) {
-  fs.writeFileSync("credentials.json", Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64"));
+  fs.writeFileSync("credentials.json", Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64").toString("utf-8"));
 }
 
 // Konfigurasi autentikasi Google API
