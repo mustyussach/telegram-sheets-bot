@@ -64,3 +64,45 @@ bot.onText(/\/start/, (msg) => {
     { parse_mode: "Markdown" }
   );
 });
+
+// Tambahan
+
+bot.startPolling(); // untuk polling mode (Railway tidak support webhook tanpa upgrade)
+
+bot.command('isi', async (ctx) => {
+  try {
+    const message = ctx.message.text;
+    const args = message.replace('/isi', '').trim().split(/\s+/);
+
+    // Pastikan jumlah minimum field ada
+    if (args.length < 4) {
+      return ctx.reply('Format salah. Gunakan: /isi NIK NAMA NO_TELP ALAMAT');
+    }
+
+    // Gabung nama dan alamat jika mengandung spasi
+    const [nik, namaPart1, ...rest] = args;
+    const noTelp = rest[0];
+    const alamat = rest.slice(1).join(' ');
+    const nama = namaPart1;
+
+    // Atur nilai yang mau ditambahkan ke spreadsheet
+    const row = [nik, nama, noTelp, alamat];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Sheet1!A:D', // Asumsikan kolom A:D = NIK, NAMA, TELP, ALAMAT
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [row],
+      },
+    });
+
+    ctx.reply('✅ Data berhasil ditambahkan ke spreadsheet!');
+  } catch (error) {
+    console.error(error);
+    ctx.reply('❌ Gagal menambahkan data.');
+  }
+});
+
+if (!/^\d+$/.test(nik)) return ctx.reply('NIK harus berupa angka.');
+if (!/^08\d{8,11}$/.test(noTelp)) return ctx.reply('Nomor telepon tidak valid.');
