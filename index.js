@@ -67,44 +67,49 @@ async function addRowData(row) {
 
 // Fungsi mencari data berdasarkan kata kunci Nama atau Alamat
 async function searchByKeyword(keyword) {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: client });
+  try {
+    const client = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: client });
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: "Sheet1",
-  });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "Sheet1",
+    });
 
-  const rows = res.data.values;
+    const rows = res.data.values;
+    console.log("Rows:", rows); // Log isi spreadsheet
 
-  if (!rows || rows.length === 0) {
-    return "Spreadsheet kosong.";
-  }
-
-  const headers = rows[0];
-  const results = [];
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    const nama = (row[1] || "").toLowerCase();
-    const alamat = (row[3] || "").toLowerCase();
-    const key = keyword.toLowerCase();
-
-    if (nama.includes(key) || alamat.includes(key)) {
-      let message = `📄 *Data Baris ${i + 1}*:\n`;
-      headers.forEach((head, idx) => {
-        message += `*${head}*: ${row[idx] || "-"}\n`;
-      });
-      results.push(message);
+    if (!rows || rows.length === 0) {
+      return "Spreadsheet kosong.";
     }
-  }
 
-  if (results.length === 0) {
-    return `❌ Tidak ditemukan data dengan kata kunci "${keyword}".`;
-  }
+    const headers = rows[0];
+    const results = [];
 
-  // Maksimal 5 hasil
-  return results.slice(0, 5).join("\n\n");
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const nama = (row[1] || "").toLowerCase();
+      const alamat = (row[3] || "").toLowerCase();
+      const key = keyword.toLowerCase();
+
+      if (nama.includes(key) || alamat.includes(key)) {
+        let message = `📄 *Data Baris ${i + 1}*:\n`;
+        headers.forEach((head, idx) => {
+          message += `*${head}*: ${row[idx] || "-"}\n`;
+        });
+        results.push(message);
+      }
+    }
+
+    if (results.length === 0) {
+      return `❌ Tidak ditemukan data dengan kata kunci "${keyword}".`;
+    }
+
+    return results.slice(0, 5).join("\n\n");
+  } catch (err) {
+    console.error("searchByKeyword error:", err);
+    throw err; // lempar ke blok catch utama
+  }
 }
 
 // Handler /start
